@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <title>لوحة تحكم زهره الجبل - OSINT متقدمة</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" crossorigin="" />
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; background: #121212; color: #eee; }
+    #map { height: 90vh; }
+    header { background: #1f1f1f; padding: 1rem; text-align: center; font-size: 1.5rem; }
+    button { margin: 0.5rem; padding: 0.5rem 1rem; font-size: 1rem; border-radius: 5px; border: none; cursor: pointer; background: #007acc; color: white; }
+    button:hover { background: #005f99; }
+    #alerts { font-weight: bold; margin: 0.5rem; }
+    .alert { color: #f44336; }
+    .info { color: #4caf50; }
+  </style>
+</head>
+<body>
+  <header>لوحة تحكم زهره الجبل - OSINT متقدمة</header>
+  <div id="alerts" class="info">جاري الحصول على الموقع...</div>
+  <div id="map"></div>
+  <button onclick="getLocation()">تحديث الموقع</button>
+  <button onclick="playAlertSound()">تشغيل نغمة التنبيه</button>
+  <audio id="alertSound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg"></audio>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    const suspiciousLocations = [
+      { name: "تجمع مشبوه في الصعيد", lat: 14.493, lon: 47.453, radiusKm: 5, details: "موقع تجمّع لعناصر إرهابية" },
+      { name: "مخزن أسلحة في نصاب", lat: 14.669, lon: 47.658, radiusKm: 5, details: "مخزن ذخيرة أسلحة" },
+      { name: "منزل إيواء في مرخة", lat: 14.748, lon: 47.399, radiusKm: 5, details: "موقع منزل إيواء إرهابي" },
+      { name: "مخزن أسلحة في المصينعة", lat: 14.640, lon: 47.500, radiusKm: 5, details: "مخزن ذخيرة متوسط الحجم" },
+      { name: "منزل سعد بن عاطف في حطيب", lat: 14.576, lon: 47.677, radiusKm: 5, details: "منزل قيادي معروف" },
+      { name: "نقطة تمويل قطري في عتق", lat: 14.540, lon: 46.832, radiusKm: 5, details: "تحويلات مالية مشبوهة" },
+      { name: "نشاط حوالات في الروضة", lat: 14.383, lon: 47.450, radiusKm: 5, details: "موقع نشاط مالي مشبوه" }
+    ];
+
+    const alertsDiv = document.getElementById("alerts");
+    const alertSound = document.getElementById("alertSound");
+    let map, userMarker;
+
+    function deg2rad(deg) {
+      return deg * (Math.PI / 180);
+    }
+
+    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = deg2rad(lat2 - lat1);
+      const dLon = deg2rad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function checkAlerts(userLat, userLon) {
+      let foundAlert = false;
+      let alertsHtml = "";
+      suspiciousLocations.forEach(loc => {
+        const dist = getDistanceFromLatLonInKm(userLat, userLon, loc.lat, loc.lon);
+        if (dist <= loc.radiusKm) {
+          foundAlert = true;
+          alertsHtml += `<p class="alert">⚠️ خطر: ${loc.name} على بعد ${dist.toFixed(2)} كم<br>تفاصيل: ${loc.details}</p>`;
+          playAlertSound();
+        }
+      });
+      if (!foundAlert) {
+        alertsHtml = `<p class="info">لا توجد تنبيهات ضمن 5 كم من موقعك الحالي.</p>`;
+      }
+      alertsDiv.innerHTML = alertsHtml;
+    }
+
+    function getLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(position => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          alertsDiv.textContent = `خط العرض: ${lat.toFixed(5)}, خط الطول: ${lon.toFixed(5)}`;
+          if (!map) {
+            map = L.map('map').setView([lat, lon], 12);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              maxZoom: 18,
+              attribution: '© OpenStreetMap'
+            }).addTo(map);
+
+            suspiciousLocations.forEach(loc => {
+              L.circle([loc.lat, loc.lon], {
+                color: 'red',
+                fillColor: '#f03',
+                fillOpacity: 0.5,
+                radius: loc.radiusKm * 1000
+              }).addTo(map).bindPopup(`<b>${loc.name}</b><br>${loc.details}`);
+            });
+
+            userMarker = L.marker([lat, lon]).addTo(map).bindPopup("أنت هنا").openPopup();
+          } else {
+            userMarker.setLatLng([lat, lon]).update();
+            map.setView([lat, lon]);
+          }
+          checkAlerts(lat, lon);
+        }, () => {
+          alertsDiv.textContent = "تعذر الحصول على الموقع.";
+        });
+      } else {
+        alertsDiv.textContent = "المتصفح لا يدعم خدمة الموقع.";
+      }
+    }
+
+    function playAlertSound() {
+      alertSound.play();
+    }
+
+    window.onload = getLocation;
+  </script>
+</body>
+</html>
